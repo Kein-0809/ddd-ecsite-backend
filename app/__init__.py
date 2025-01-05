@@ -2,6 +2,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
+from .domain.services.auth_service import AuthService
 
 # グローバルなインスタンスを作成
 db = SQLAlchemy()
@@ -27,6 +28,9 @@ def create_app(test_config=None):
     db.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
+
+    # 認証サービスの初期化
+    app.auth_service = AuthService(user_repository=db.session)
 
     with app.app_context():
         # Blueprintの登録

@@ -5,6 +5,8 @@ import jwt
 from datetime import datetime, timedelta
 from ...infrastructure.database.models import UserModel
 from ... import db
+from ...application.usecases.user_logout import UserLogoutUseCase, LogoutRequest
+from ...domain.services.auth_service import AuthService
 
 auth_routes = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -58,4 +60,36 @@ def login():
         current_app.logger.error(f"ログイン中にエラーが発生しました: {str(e)}")
         return jsonify({
             'error': 'ログインに失敗しました'
+        }), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@auth_routes.route('/logout', methods=['POST'])
+def logout():
+    """ログアウトエンドポイント"""
+    try:
+        # トークンの取得
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({
+                'error': '認証トークンが必要です'
+            }), HTTPStatus.UNAUTHORIZED
+        
+        token = auth_header.split(' ')[1]
+        
+        # ユースケースの実行
+        usecase = UserLogoutUseCase(
+            auth_service=current_app.auth_service
+        )
+        
+        usecase.execute(LogoutRequest(token=token))
+        
+        return jsonify({
+            'message': 'ログアウトに成功しました'
+        }), HTTPStatus.OK
+        
+    except ValueError as e:
+        return jsonify({'error': str(e)}), HTTPStatus.UNAUTHORIZED
+    except Exception as e:
+        current_app.logger.error(f"ログアウト中にエラーが発生しました: {str(e)}")
+        return jsonify({
+            'error': 'ログアウトに失敗しました'
         }), HTTPStatus.INTERNAL_SERVER_ERROR
