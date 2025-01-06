@@ -8,5 +8,7 @@ class UserModel(db.Model):
     email = db.Column(db.String, unique=True, nullable=False)
     name = db.Column(db.String, nullable=False)
     password_hash = db.Column(db.String, nullable=False)
+    role = db.Column(db.String, nullable=False)
     is_active = db.Column(db.Boolean, default=False)
-    is_admin = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, nullable=False)
+    updated_at = db.Column(db.DateTime, nullable=False)

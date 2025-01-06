@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from ..value_objects.email import Email
 from ..value_objects.password import Password
+from ..value_objects.role import Role, RoleType
 
 
 @dataclass
@@ -12,8 +13,8 @@ class User:
     name: str
     _email: Email
     _password: Password
+    role: Role
     is_active: bool = False
-    is_admin: bool = False
     created_at: datetime = None
     updated_at: datetime = None
 
@@ -24,6 +25,14 @@ class User:
     @property
     def password(self) -> Password:
         return self._password
+
+    def is_super_admin(self) -> bool:
+        """スーパー管理者かどうかを判定"""
+        return self.role.is_super_admin()
+
+    def is_admin(self) -> bool:
+        """管理者かどうかを判定"""
+        return self.role.is_admin()
 
     def activate(self) -> None:
         """ユーザーを有効化"""
