@@ -1,11 +1,17 @@
+"""
+スーパー管理者登録ユースケース
+"""
 from dataclasses import dataclass
 from datetime import datetime
 import uuid
+
 from ...domain.entities.user import User
 from ...domain.value_objects.email import Email
 from ...domain.value_objects.password import Password
 from ...domain.value_objects.role import Role, RoleType
 from ...domain.repositories.user_repository import UserRepository
+from ...domain.services.email_service import EmailService
+from ...domain.exceptions import UserAlreadyExistsError, ValidationError
 
 @dataclass
 class SuperAdminRegistrationRequest:
@@ -16,50 +22,56 @@ class SuperAdminRegistrationRequest:
 
 class SuperAdminRegistrationUseCase:
     """スーパー管理者登録ユースケース"""
-    
-    def __init__(self, user_repository: UserRepository):
+
+    def __init__(self, user_repository: UserRepository, email_service: EmailService):
+        """
+        初期化
+
+        Args:
+            user_repository: ユーザーリポジトリ
+            email_service: メールサービス
+        """
         self.user_repository = user_repository
-    
+        self.email_service = email_service
+
     def execute(self, request: SuperAdminRegistrationRequest) -> User:
         """
         スーパー管理者を登録
-        
+
         Args:
             request: 登録リクエスト
-            
+
         Returns:
             User: 作成されたスーパー管理者
-            
+
         Raises:
-            ValueError: 
-                - 入力値が不正な場合
-                - すでにスーパー管理者が存在する場合
+            UserAlreadyExistsError: スーパー管理者が既に存在する場合
+            ValidationError: 入力値が不正な場合
         """
         # スーパー管理者の存在チェック
         if self.user_repository.exists_super_admin():
-            raise ValueError("スーパー管理者はすでに登録されています")
+            raise UserAlreadyExistsError("スーパー管理者は既に登録されています")
 
         # メールアドレスの重複チェック
-        if self.user_repository.find_by_email(request.email):
-            raise ValueError("このメールアドレスは既に登録されています")
+        if self.user_repository.find_by_email(Email(request.email)):
+            raise UserAlreadyExistsError("このメールアドレスは既に登録されています")
 
-        # 値オブジェクトの作成
-        email = Email(request.email)
-        password = Password.create(request.password)
-        role = Role(RoleType.SUPER_ADMIN)
-        
         # スーパー管理者の作成
-        now = datetime.utcnow()
-        super_admin = User(
+        user = User(
             id=str(uuid.uuid4()),
-            _email=email,
-            _password=password,
+            _email=Email(request.email),
+            _password=Password.create(request.password),
             name=request.name,
-            role=role,
-            is_active=True,  # スーパー管理者は作成時から有効
-            created_at=now,
-            updated_at=now
+            role=Role(RoleType.SUPER_ADMIN),
+            is_active=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
         )
-        
-        # 保存
-        return self.user_repository.save(super_admin) 
+
+        # スーパー管理者の保存
+        saved_user = self.user_repository.save(user)
+
+        # 確認メールの送信
+        self.email_service.send_confirmation_email(saved_user)
+
+        return saved_user 
