@@ -1,63 +1,41 @@
 import pytest
-import jwt
 from datetime import datetime, timedelta
 from app.domain.value_objects.auth_token import AuthToken
+from app.domain.exceptions import ValidationError
 
 
 class TestAuthToken:
-    """認証トークンの値オブジェクトのテスト"""
+    """認証トークンのテストクラス"""
 
-    def test_create_token(self):
-        """トークンの生成テスト"""
-        # トークンの生成
-        user_id = "test-user-id"
-        secret_key = "test-secret-key"
-        token = AuthToken.create(user_id, secret_key)
-
-        # トークンの検証
+    def test_create_token(self, test_user, secret_key):
+        """トークン生成のテスト"""
+        token = AuthToken.create(test_user.id, secret_key)
         assert isinstance(token, AuthToken)
-        assert isinstance(token.token, str)
+        assert token.value is not None
+        assert len(token.value) > 0
 
-        # トークンのデコード
-        decoded = jwt.decode(token.token, secret_key, algorithms=['HS256'])
-        assert decoded['user_id'] == user_id
-        assert 'exp' in decoded
-
-    def test_decode_valid_token(self):
+    def test_decode_valid_token(self, test_user, secret_key):
         """有効なトークンのデコードテスト"""
-        user_id = "test-user-id"
-        secret_key = "test-secret-key"
-        token = AuthToken.create(user_id, secret_key)
+        token = AuthToken.create(test_user.id, secret_key)
+        user_id = token.decode(secret_key)
+        assert user_id == test_user.id
 
-        # デコード
-        payload = AuthToken.decode(token.token, secret_key)
-        assert payload is not None
-        assert payload['user_id'] == user_id
-
-    def test_decode_invalid_token(self):
+    def test_decode_invalid_token(self, secret_key):
         """無効なトークンのデコードテスト"""
-        # 不正なトークン
-        invalid_token = "invalid.token.string"
-        payload = AuthToken.decode(invalid_token, "test-secret-key")
-        assert payload is None
+        invalid_token = AuthToken("invalid.token.string")
+        with pytest.raises(ValidationError) as exc_info:
+            invalid_token.decode(secret_key)
+        assert "無効なトークンです" in str(exc_info.value)
 
-    def test_token_expiration(self):
+    def test_token_expiration(self, test_user, secret_key):
         """トークンの有効期限テスト"""
-        user_id = "test-user-id"
-        secret_key = "test-secret-key"
-        expires_in = 1  # 1秒後に有効期限切れ
+        # 有効期限切れのトークンを生成
+        expired_token = AuthToken.create(
+            test_user.id,
+            secret_key,
+            expiration=datetime.utcnow() - timedelta(hours=1)
+        )
 
-        token = AuthToken.create(user_id, secret_key, expires_in)
-        
-        # 有効期限内
-        payload = AuthToken.decode(token.token, secret_key)
-        assert payload is not None
-        assert payload['user_id'] == user_id
-
-        # 有効期限切れを待つ
-        import time
-        time.sleep(2)
-
-        # 有効期限切れ後
-        payload = AuthToken.decode(token.token, secret_key)
-        assert payload is None 
+        with pytest.raises(ValidationError) as exc_info:
+            expired_token.decode(secret_key)
+        assert "トークンの有効期限が切れています" in str(exc_info.value) 
