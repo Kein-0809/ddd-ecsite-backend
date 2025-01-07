@@ -2,10 +2,10 @@ from flask import Blueprint, jsonify, request, current_app
 from http import HTTPStatus
 from ...application.usecases.user_registration import UserRegistrationUseCase
 
-user_routes = Blueprint("user", __name__, url_prefix="/api/users")
+bp = Blueprint("user", __name__, url_prefix="/api/users")
 
 
-@user_routes.route("/register", methods=["POST"])
+@bp.route("/register", methods=["POST"])
 def register():
     """ユーザー登録エンドポイント"""
     try:

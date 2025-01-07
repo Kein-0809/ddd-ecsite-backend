@@ -1,28 +1,37 @@
+"""
+認証トークンの値オブジェクト
+"""
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import jwt
-from typing import Optional
+from app.domain.exceptions import ValidationError
+
 
 @dataclass(frozen=True)
 class AuthToken:
-    """認証トークンを表す値オブジェクト"""
-    
-    token: str
-    
+    """認証トークンの値オブジェクト"""
+    value: str
+
     @classmethod
-    def create(cls, user_id: str, secret_key: str, expires_in: int = 3600) -> 'AuthToken':
-        """トークンを生成"""
+    def create(cls, user_id: str, secret_key: str, expiration: datetime = None) -> 'AuthToken':
+        """トークンを生成する"""
+        if expiration is None:
+            expiration = datetime.utcnow() + timedelta(days=1)
+
         payload = {
             'user_id': user_id,
-            'exp': datetime.utcnow() + timedelta(seconds=expires_in)
+            'exp': expiration
         }
+
         token = jwt.encode(payload, secret_key, algorithm='HS256')
-        return cls(token=token)
-    
-    @staticmethod
-    def decode(token: str, secret_key: str) -> Optional[dict]:
-        """トークンをデコード"""
+        return cls(token)
+
+    def decode(self, secret_key: str) -> str:
+        """トークンをデコードしてユーザーIDを取得する"""
         try:
-            return jwt.decode(token, secret_key, algorithms=['HS256'])
+            payload = jwt.decode(self.value, secret_key, algorithms=['HS256'])
+            return payload['user_id']
+        except jwt.ExpiredSignatureError:
+            raise ValidationError("トークンの有効期限が切れています")
         except jwt.InvalidTokenError:
-            return None
+            raise ValidationError("無効なトークンです")

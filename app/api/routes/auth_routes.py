@@ -7,10 +7,11 @@ from ...infrastructure.database.models import UserModel
 from ... import db
 from ...application.usecases.user_logout import UserLogoutUseCase, LogoutRequest
 from ...domain.services.auth_service import AuthService
+from ...domain.value_objects.email import Email
 
-auth_routes = Blueprint('auth', __name__, url_prefix='/api/auth')
+bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
-@auth_routes.route('/login', methods=['POST'])
+@bp.route('/login', methods=['POST'])
 def login():
     """ログインエンドポイント"""
     try:
@@ -23,10 +24,14 @@ def login():
             }), HTTPStatus.BAD_REQUEST
 
         # ユーザーの検索
-        user = db.session.query(UserModel).filter_by(email=data['email']).first()
+        user = current_app.container.user_repository().find_by_email(data['email'])
+        if not user:
+            return jsonify({
+                'error': 'メールアドレスまたはパスワードが正しくありません'
+            }), HTTPStatus.UNAUTHORIZED
         
-        # 認証チェック
-        if not user or not check_password_hash(user.password_hash, data['password']):
+        # パスワードの検証
+        if not user.verify_password(data['password']):
             return jsonify({
                 'error': 'メールアドレスまたはパスワードが正しくありません'
             }), HTTPStatus.UNAUTHORIZED
@@ -51,7 +56,7 @@ def login():
             'token': token,
             'user': {
                 'id': user.id,
-                'email': user.email,
+                'email': user.email.value,
                 'name': user.name
             }
         }), HTTPStatus.OK
@@ -62,7 +67,7 @@ def login():
             'error': 'ログインに失敗しました'
         }), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@auth_routes.route('/logout', methods=['POST'])
+@bp.route('/logout', methods=['POST'])
 def logout():
     """ログアウトエンドポイント"""
     try:

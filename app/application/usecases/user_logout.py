@@ -20,6 +20,15 @@ class UserLogoutUseCase:
             request: ログアウトリクエスト
             
         Raises:
-            ValueError: トークンが無効な場合
+            ValueError: 
+                - トークンが指定されていない場合
+                - トークンが無効な場合
         """
+        # ログアウト時はトークンが無効でもエラーにしない
+        
+        # トークンの存在チェック
+        if not request.token:
+            raise ValueError("トークンが指定されていません")
+            
+        # トークンの無効化
         self.auth_service.invalidate_token(request.token) 

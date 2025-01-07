@@ -1,7 +1,11 @@
+"""
+ユーザーログインユースケース
+"""
 from dataclasses import dataclass
 from ...domain.services.auth_service import AuthService
 from ...domain.value_objects.auth_token import AuthToken
 from ...domain.entities.user import User
+from ...domain.exceptions import AuthenticationError
 
 @dataclass
 class LoginRequest:
@@ -14,6 +18,7 @@ class LoginResponse:
     """ログインレスポンス"""
     user: User
     token: AuthToken
+    role: str  # ロール情報を追加
 
 class UserLoginUseCase:
     """ユーザーログインユースケース"""
@@ -32,11 +37,18 @@ class UserLoginUseCase:
             LoginResponse: ログイン結果
             
         Raises:
-            ValueError: 認証に失敗した場合
+            AuthenticationError: 認証に失敗した場合
         """
-        user, token = self.auth_service.authenticate(
-            email=request.email,
-            password=request.password
-        )
-        
-        return LoginResponse(user=user, token=token)
+        try:
+            user, token = self.auth_service.authenticate(
+                email=request.email,
+                password=request.password
+            )
+            
+            return LoginResponse(
+                user=user,
+                token=token,
+                role=user.role.role_type.value  # ロール情報を追加
+            )
+        except ValueError as e:
+            raise AuthenticationError(str(e))

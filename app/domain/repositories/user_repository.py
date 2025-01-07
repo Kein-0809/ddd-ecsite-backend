@@ -17,6 +17,11 @@ class UserRepository(ABC):
         pass
 
     @abstractmethod
+    def find_by_id(self, user_id: str) -> Optional[User]:
+        """IDでユーザーを検索"""
+        pass
+
+    @abstractmethod
     def exists_super_admin(self) -> bool:
         """スーパー管理者が存在するかどうかを確認"""
         pass

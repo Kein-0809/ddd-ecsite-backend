@@ -1,11 +1,14 @@
+"""
+アプリケーションのルートパッケージ
+"""
+
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from .domain.services.auth_service import AuthService
+from .infrastructure.database import db
 
 # グローバルなインスタンスを作成
-db = SQLAlchemy()
 migrate = Migrate()
 csrf = CSRFProtect()
 
@@ -33,10 +36,12 @@ def create_app(test_config=None):
     app.auth_service = AuthService(user_repository=db.session)
 
     with app.app_context():
-        # Blueprintの登録
-        from .api.routes import user_routes, auth_routes
-        app.register_blueprint(user_routes.user_routes)
-        app.register_blueprint(auth_routes.auth_routes)
+        # テストモードの場合はルートの登録をスキップ
+        if not app.config.get('TESTING', False):
+            # Blueprintの登録
+            from .api.routes import user_routes, auth_routes
+            app.register_blueprint(user_routes.user_routes)
+            app.register_blueprint(auth_routes.auth_routes)
 
         # データベースの初期化
         db.create_all()
