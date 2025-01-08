@@ -7,6 +7,7 @@ from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from .domain.services.auth_service import AuthService
 from .infrastructure.database import db
+from .container import Container
 
 # グローバルなインスタンスを作成
 migrate = Migrate()
@@ -30,18 +31,22 @@ def create_app(test_config=None):
     # 拡張機能の初期化
     db.init_app(app)
     migrate.init_app(app, db)
-    csrf.init_app(app)
 
-    # 認証サービスの初期化
-    app.auth_service = AuthService(user_repository=db.session)
+    # テストモードの場合はCSRF保護を無効化
+    if not app.config.get('TESTING', False):
+        csrf.init_app(app)
 
     with app.app_context():
-        # テストモードの場合はルートの登録をスキップ
-        if not app.config.get('TESTING', False):
-            # Blueprintの登録
-            from .api.routes import user_routes, auth_routes
-            app.register_blueprint(user_routes.user_routes)
-            app.register_blueprint(auth_routes.auth_routes)
+        # コンテナの初期化
+        app.container = Container(db.session)
+
+        # 認証サービスの初期化
+        app.auth_service = AuthService(user_repository=app.container.user_repository())
+
+        # Blueprintの登録
+        from .api.routes import user_routes, auth_routes
+        app.register_blueprint(user_routes.bp)
+        app.register_blueprint(auth_routes.bp)
 
         # データベースの初期化
         db.create_all()

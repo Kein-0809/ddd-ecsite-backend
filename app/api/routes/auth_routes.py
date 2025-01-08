@@ -5,11 +5,74 @@ import jwt
 from datetime import datetime, timedelta
 from ...infrastructure.database.models import UserModel
 from ... import db
+from ...application.usecases.user_registration import UserRegistrationUseCase, UserRegistrationRequest
 from ...application.usecases.user_logout import UserLogoutUseCase, LogoutRequest
 from ...domain.services.auth_service import AuthService
 from ...domain.value_objects.email import Email
+from ...domain.exceptions import UserAlreadyExistsError, ValidationError
 
 bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+
+@bp.route('/register', methods=['POST'])
+def register():
+    """ユーザー登録エンドポイント"""
+    try:
+        data = request.get_json()
+        
+        # リクエストデータのバリデーション
+        if not data or 'email' not in data or 'password' not in data or 'name' not in data:
+            return jsonify({
+                'error': '必須フィールドが不足しています'
+            }), HTTPStatus.BAD_REQUEST
+
+        # ユースケースの実行
+        usecase = UserRegistrationUseCase(
+            user_repository=current_app.container.user_repository(),
+            email_service=current_app.container.email_service()
+        )
+        
+        user = usecase.execute(
+            UserRegistrationRequest(
+                email=data['email'],
+                password=data['password'],
+                name=data['name']
+            )
+        )
+
+        # トークンの生成
+        token = jwt.encode(
+            {
+                'user_id': user.id,
+                'exp': datetime.utcnow() + timedelta(hours=1)
+            },
+            current_app.config['SECRET_KEY'],
+            algorithm='HS256'
+        )
+
+        return jsonify({
+            'message': 'ユーザー登録が完了しました',
+            'token': token,
+            'user': {
+                'id': user.id,
+                'email': user.email.value,
+                'name': user.name,
+                'role': user.role.role_type.value
+            }
+        }), HTTPStatus.CREATED
+        
+    except UserAlreadyExistsError as e:
+        return jsonify({
+            'error': str(e)
+        }), HTTPStatus.CONFLICT
+    except ValidationError as e:
+        return jsonify({
+            'error': str(e)
+        }), HTTPStatus.BAD_REQUEST
+    except Exception as e:
+        current_app.logger.error(f"ユーザー登録中にエラーが発生しました: {str(e)}")
+        return jsonify({
+            'error': 'ユーザー登録に失敗しました'
+        }), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @bp.route('/login', methods=['POST'])
 def login():
