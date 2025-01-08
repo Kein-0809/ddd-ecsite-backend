@@ -1,3 +1,6 @@
+"""
+認証関連のルート�ンドラ
+"""
 from flask import Blueprint, jsonify, request, current_app
 from http import HTTPStatus
 from werkzeug.security import check_password_hash
@@ -6,10 +9,12 @@ from datetime import datetime, timedelta
 from ...infrastructure.database.models import UserModel
 from ... import db
 from ...application.usecases.user_registration import UserRegistrationUseCase, UserRegistrationRequest
+from ...application.usecases.user_login import UserLoginUseCase, LoginRequest
 from ...application.usecases.user_logout import UserLogoutUseCase, LogoutRequest
 from ...domain.services.auth_service import AuthService
 from ...domain.value_objects.email import Email
-from ...domain.exceptions import UserAlreadyExistsError, ValidationError
+from ...domain.value_objects.auth_token import AuthToken
+from ...domain.exceptions import UserAlreadyExistsError, ValidationError, AuthenticationError
 
 bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -40,21 +45,14 @@ def register():
         )
 
         # トークンの生成
-        token = jwt.encode(
-            {
-                'user_id': user.id,
-                'exp': datetime.utcnow() + timedelta(hours=1)
-            },
-            current_app.config['SECRET_KEY'],
-            algorithm='HS256'
-        )
+        token = AuthToken.create(user.id, current_app.config['SECRET_KEY'])
 
         return jsonify({
             'message': 'ユーザー登録が完了しました',
-            'token': token,
+            'token': str(token),
             'user': {
                 'id': user.id,
-                'email': user.email.value,
+                'email': str(user.email),
                 'name': user.name,
                 'role': user.role.role_type.value
             }
@@ -86,44 +84,33 @@ def login():
                 'error': '必須フィールドが不足しています'
             }), HTTPStatus.BAD_REQUEST
 
-        # ユーザーの検索
-        user = current_app.container.user_repository().find_by_email(data['email'])
-        if not user:
-            return jsonify({
-                'error': 'メールアドレスまたはパスワードが正しくありません'
-            }), HTTPStatus.UNAUTHORIZED
+        # ユースケースの実行
+        usecase = UserLoginUseCase(
+            auth_service=current_app.auth_service
+        )
         
-        # パスワードの検証
-        if not user.verify_password(data['password']):
-            return jsonify({
-                'error': 'メールアドレスまたはパスワードが正しくありません'
-            }), HTTPStatus.UNAUTHORIZED
-
-        if not user.is_active:
-            return jsonify({
-                'error': 'アカウントが有効化されていません'
-            }), HTTPStatus.UNAUTHORIZED
-
-        # トークンの生成
-        token = jwt.encode(
-            {
-                'user_id': user.id,
-                'exp': datetime.utcnow() + timedelta(hours=1)
-            },
-            current_app.config['SECRET_KEY'],
-            algorithm='HS256'
+        result = usecase.execute(
+            LoginRequest(
+                email=data['email'],
+                password=data['password']
+            )
         )
 
         return jsonify({
             'message': 'ログインに成功しました',
-            'token': token,
+            'token': str(result.token),
             'user': {
-                'id': user.id,
-                'email': user.email.value,
-                'name': user.name
+                'id': result.user.id,
+                'email': str(result.user.email),
+                'name': result.user.name,
+                'role': result.user.role.role_type.value
             }
         }), HTTPStatus.OK
         
+    except AuthenticationError as e:
+        return jsonify({
+            'error': str(e)
+        }), HTTPStatus.UNAUTHORIZED
     except Exception as e:
         current_app.logger.error(f"ログイン中にエラーが発生しました: {str(e)}")
         return jsonify({
@@ -142,20 +129,30 @@ def logout():
             }), HTTPStatus.UNAUTHORIZED
         
         token = auth_header.split(' ')[1]
+        auth_token = AuthToken(token)
+        
+        # トークンの検証
+        current_app.auth_service.verify_token(auth_token)
         
         # ユースケースの実行
         usecase = UserLogoutUseCase(
             auth_service=current_app.auth_service
         )
         
-        usecase.execute(LogoutRequest(token=token))
+        usecase.execute(LogoutRequest(token=auth_token))
         
         return jsonify({
             'message': 'ログアウトに成功しました'
         }), HTTPStatus.OK
         
-    except ValueError as e:
-        return jsonify({'error': str(e)}), HTTPStatus.UNAUTHORIZED
+    except AuthenticationError as e:
+        return jsonify({
+            'error': str(e)
+        }), HTTPStatus.UNAUTHORIZED
+    except ValidationError as e:
+        return jsonify({
+            'error': str(e)
+        }), HTTPStatus.UNAUTHORIZED
     except Exception as e:
         current_app.logger.error(f"ログアウト中にエラーが発生しました: {str(e)}")
         return jsonify({

@@ -12,6 +12,10 @@ class AuthToken:
     """認証トークンの値オブジェクト"""
     value: str
 
+    def __str__(self) -> str:
+        """トークンの文字列表現を返す"""
+        return self.value
+
     @classmethod
     def create(cls, user_id: str, secret_key: str, expiration: datetime = None) -> 'AuthToken':
         """トークンを生成する"""

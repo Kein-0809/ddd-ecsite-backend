@@ -71,21 +71,55 @@ class AuthService:
         )
         return AuthToken(token)
 
+    def verify_token(self, token: AuthToken) -> User:
+        """
+        トークンを検証してユーザーを取得
+        
+        Args:
+            token: 検証するトークン
+            
+        Returns:
+            User: トークンに紐づくユーザー
+            
+        Raises:
+            AuthenticationError: トークンが無効な場合
+        """
+        try:
+            # トークンをデコードしてユーザーIDを取得
+            user_id = token.decode(current_app.config['SECRET_KEY'])
+            
+            # トークンが無効化リストに含まれていないことを確認
+            if token.value in self._invalidated_tokens:
+                raise AuthenticationError("トークンは無効化されています")
+            
+            # ユーザーを取得
+            user = self.user_repository.find_by_id(user_id)
+            if user is None:
+                raise AuthenticationError("ユーザーが見つかりません")
+                
+            return user
+            
+        except ValidationError as e:
+            raise AuthenticationError(str(e))
+
     def invalidate_token(self, token: AuthToken) -> None:
         """
         トークンを無効化
         
         Args:
             token: 無効化するトークン
+            
+        Raises:
+            ValidationError: トークンが無効な場合
         """
         try:
             # トークンをデコードして有効性を確認
-            AuthToken.decode(token, current_app.config['SECRET_KEY'])
+            token.decode(current_app.config['SECRET_KEY'])
             # 有効なトークンを無効化リストに追加
             self._invalidated_tokens.add(token.value)
         except ValidationError:
-            # トークンが無効な場合は何もしない
-            pass
+            # トークンが無効な場合は例外を再送出
+            raise
 
     def is_token_valid(self, token: AuthToken) -> bool:
         """
@@ -99,7 +133,7 @@ class AuthService:
         """
         try:
             # トークンをデコードして有効性を確認
-            AuthToken.decode(token, current_app.config['SECRET_KEY'])
+            token.decode(current_app.config['SECRET_KEY'])
             # 無効化リストに含まれていないことを確認
             return token.value not in self._invalidated_tokens
         except ValidationError:

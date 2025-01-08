@@ -44,9 +44,10 @@ def create_app(test_config=None):
         app.auth_service = AuthService(user_repository=app.container.user_repository())
 
         # Blueprintの登録
-        from .api.routes import user_routes, auth_routes
+        from .api.routes import user_routes, auth_routes, admin_routes
         app.register_blueprint(user_routes.bp)
         app.register_blueprint(auth_routes.bp)
+        app.register_blueprint(admin_routes.bp)
 
         # データベースの初期化
         db.create_all()

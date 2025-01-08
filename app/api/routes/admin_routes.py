@@ -1,12 +1,21 @@
+"""
+管理者関連のルートハン�ラ
+"""
 from flask import Blueprint, jsonify, request, current_app
 from http import HTTPStatus
 from ...application.usecases.super_admin_registration import (
     SuperAdminRegistrationUseCase,
     SuperAdminRegistrationRequest
 )
-from ...application.usecases.admin_registration import (
-    AdminRegistrationUseCase,
-    AdminRegistrationRequest
+from ...application.usecases.super_admin_login import (
+    SuperAdminLoginUseCase,
+    SuperAdminLoginRequest
+)
+from ...domain.exceptions import (
+    UserAlreadyExistsError,
+    ValidationError,
+    AuthenticationError,
+    UnauthorizedError
 )
 
 bp = Blueprint('admin', __name__, url_prefix='/api/admin')
@@ -17,33 +26,50 @@ def register_super_admin():
     try:
         data = request.get_json()
         
+        # リクエストデータのバリデーション
+        if not data or 'email' not in data or 'password' not in data or 'name' not in data:
+            return jsonify({
+                'error': '必須フィールドが不足しています'
+            }), HTTPStatus.BAD_REQUEST
+
         # ユースケースの実行
         usecase = SuperAdminRegistrationUseCase(
-            user_repository=current_app.container.user_repository()
+            user_repository=current_app.container.user_repository(),
+            email_service=current_app.container.email_service()
         )
         
-        user = usecase.execute(SuperAdminRegistrationRequest(
-            email=data['email'],
-            password=data['password'],
-            name=data['name']
-        ))
+        user = usecase.execute(
+            SuperAdminRegistrationRequest(
+                email=data['email'],
+                password=data['password'],
+                name=data['name']
+            )
+        )
         
         return jsonify({
             'message': 'スーパー管理者を登録しました',
             'user': {
                 'id': user.id,
-                'email': user.email.value,
+                'email': str(user.email),
                 'name': user.name,
                 'role': user.role.role_type.value,
                 'is_active': user.is_active
             }
         }), HTTPStatus.CREATED
         
-    except ValueError as e:
-        return jsonify({'error': str(e)}), HTTPStatus.BAD_REQUEST
+    except UserAlreadyExistsError as e:
+        return jsonify({
+            'error': str(e)
+        }), HTTPStatus.BAD_REQUEST
+    except ValidationError as e:
+        return jsonify({
+            'error': str(e)
+        }), HTTPStatus.BAD_REQUEST
     except Exception as e:
         current_app.logger.error(f"スーパー管理者登録中にエラーが発生しました: {str(e)}")
-        return jsonify({'error': '予期せぬエラーが発生しました'}), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify({
+            'error': '予期せぬエラーが発生しました'
+        }), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @bp.route('/admin/register', methods=['POST'])
 def register_admin():

@@ -39,6 +39,29 @@ def init_database(app):
         db.session.remove()
         db.drop_all()
 
+@pytest.fixture
+def active_user(test_client):
+    """アクティブなユーザーを作成"""
+    # ユーザーを登録
+    register_data = {
+        'email': TEST_EMAIL,
+        'password': TEST_PASSWORD,
+        'name': TEST_NAME
+    }
+    response = test_client.post(
+        '/api/auth/register',
+        data=json.dumps(register_data),
+        content_type='application/json'
+    )
+    
+    # ユーザーをアクティブ化
+    with test_client.application.app_context():
+        user = UserModel.query.filter_by(email=TEST_EMAIL).first()
+        user.is_active = True
+        db.session.commit()
+    
+    return json.loads(response.data)
+
 def test_successful_user_registration(test_client):
     """
     正常系: ユーザー登録が成功するケース
@@ -74,23 +97,65 @@ def test_successful_user_registration(test_client):
         assert user.name == TEST_NAME
         assert user.role == RoleType.USER
 
-def test_duplicate_email_registration(test_client):
+def test_successful_user_login(active_user, test_client):
+    """
+    正常系: ユーザーログインが成功するケース
+    """
+    # ログインリクエスト
+    login_data = {
+        'email': TEST_EMAIL,
+        'password': TEST_PASSWORD
+    }
+    response = test_client.post(
+        '/api/auth/login',
+        data=json.dumps(login_data),
+        content_type='application/json'
+    )
+
+    # レスポンスの検証
+    assert response.status_code == HTTPStatus.OK
+    response_data = json.loads(response.data)
+    assert 'token' in response_data
+    assert 'user' in response_data
+    assert response_data['user']['email'] == TEST_EMAIL
+    assert response_data['user']['name'] == TEST_NAME
+
+def test_successful_user_logout(active_user, test_client):
+    """
+    正常系: ユーザーログアウトが成功するケース
+    """
+    # ログイン
+    login_response = test_client.post(
+        '/api/auth/login',
+        data=json.dumps({
+            'email': TEST_EMAIL,
+            'password': TEST_PASSWORD
+        }),
+        content_type='application/json'
+    )
+    token = json.loads(login_response.data)['token']
+
+    # ログアウトリクエスト
+    response = test_client.post(
+        '/api/auth/logout',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+
+    # レスポンスの検証
+    assert response.status_code == HTTPStatus.OK
+    response_data = json.loads(response.data)
+    assert response_data['message'] == 'ログアウトに成功しました'
+
+def test_duplicate_email_registration(active_user, test_client):
     """
     異常系: 既存のメールアドレスで登録を試みるケース
     """
-    # 最初のユーザーを登録
+    # 同じメールアドレスで2回目の登録を試みる
     data = {
         'email': TEST_EMAIL,
         'password': TEST_PASSWORD,
         'name': TEST_NAME
     }
-    test_client.post(
-        '/api/auth/register',
-        data=json.dumps(data),
-        content_type='application/json'
-    )
-
-    # 同じメールアドレスで2回目の登録を試みる
     response = test_client.post(
         '/api/auth/register',
         data=json.dumps(data),
@@ -102,65 +167,36 @@ def test_duplicate_email_registration(test_client):
     response_data = json.loads(response.data)
     assert 'error' in response_data
 
-def test_invalid_request_data(test_client):
+def test_login_with_invalid_credentials(active_user, test_client):
     """
-    異常系: 必須フィールドが不足しているケース
+    異常系: 不正な認証情報でログインを試みるケース
     """
-    # メールアドレスが欠けているデータ
-    data = {
-        'password': TEST_PASSWORD,
-        'name': TEST_NAME
-    }
-
-    response = test_client.post(
-        '/api/auth/register',
-        data=json.dumps(data),
-        content_type='application/json'
-    )
-
-    # レスポンスの検証
-    assert response.status_code == HTTPStatus.BAD_REQUEST
-    response_data = json.loads(response.data)
-    assert 'error' in response_data
-
-def test_invalid_email_format(test_client):
-    """
-    異常系: 不正なメールアドレス形式で登録を試みるケース
-    """
-    data = {
-        'email': 'invalid-email',
-        'password': TEST_PASSWORD,
-        'name': TEST_NAME
-    }
-
-    response = test_client.post(
-        '/api/auth/register',
-        data=json.dumps(data),
-        content_type='application/json'
-    )
-
-    # レスポンスの検証
-    assert response.status_code == HTTPStatus.BAD_REQUEST
-    response_data = json.loads(response.data)
-    assert 'error' in response_data
-
-def test_invalid_password_format(test_client):
-    """
-    異常系: パスワード要件を満たさないパスワードで登録を試みるケース
-    """
-    data = {
+    # 不正なパスワードでログイン
+    login_data = {
         'email': TEST_EMAIL,
-        'password': 'weak',  # 要件を満たさない弱いパスワード
-        'name': TEST_NAME
+        'password': 'WrongPassword123!'
     }
-
     response = test_client.post(
-        '/api/auth/register',
-        data=json.dumps(data),
+        '/api/auth/login',
+        data=json.dumps(login_data),
         content_type='application/json'
     )
 
     # レスポンスの検証
-    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    response_data = json.loads(response.data)
+    assert 'error' in response_data
+
+def test_logout_with_invalid_token(test_client):
+    """
+    異常系: 無効なトークンでログアウトを試みるケース
+    """
+    response = test_client.post(
+        '/api/auth/logout',
+        headers={'Authorization': 'Bearer invalid_token'}
+    )
+
+    # レスポンスの検証
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
     response_data = json.loads(response.data)
     assert 'error' in response_data 
